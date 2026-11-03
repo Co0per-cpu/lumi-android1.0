@@ -88,6 +88,10 @@ class Ajustes(context: Context) {
     fun appsOcultar(): Set<String> = p.getStringSet("appsOcultar", emptySet())!!.toSet()
     fun fijarAppsOcultar(paquetes: Set<String>) = p.edit().putStringSet("appsOcultar", paquetes).apply()
 
+    var sentarseEnBordes: Boolean
+        get() = p.getBoolean("bordes", true)
+        set(v) = p.edit().putBoolean("bordes", v).apply()
+
     var pasear: Boolean
         get() = p.getBoolean("pasear", true)
         set(v) = p.edit().putBoolean("pasear", v).apply()

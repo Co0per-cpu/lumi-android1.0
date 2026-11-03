@@ -84,6 +84,20 @@
                 android:value="Asistente personal flotante que el usuario activa y controla" />
         </service>
 
+        <!-- Opcional: encontrar bordes en la pantalla para sentarse en ellos. Lo activas tú en Accesibilidad. -->
+        <service
+            android:name=".overlay.BordesService"
+            android:exported="true"
+            android:label="Lumi: sentarse en bordes"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/bordes" />
+        </service>
+
         <receiver
             android:name=".acciones.RecordatorioReceiver"
             android:exported="false" />

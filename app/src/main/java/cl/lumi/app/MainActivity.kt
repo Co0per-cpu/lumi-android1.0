@@ -321,6 +321,16 @@ class MainActivity : AppCompatActivity() {
             OverlayService.activo?.aplicarAjustes()
         }
         Switch(this).apply {
+            text = "Pararse y sentarse sobre widgets, íconos y ventanas"
+            isChecked = ajustes.sentarseEnBordes
+            setOnCheckedChangeListener { _, v -> ajustes.sentarseEnBordes = v }
+        }.also { raiz.addView(it) }
+        permisoFila(
+            "Ver bordes de la pantalla (Accesibilidad)",
+            "Para encontrar dónde sentarse, Lumi necesita un permiso de Accesibilidad. Solo mira las posiciones de los recuadros de la pantalla: no lee textos, no toca nada y no guarda nada. En la lista, entra a \"Apps instaladas\" › \"Lumi: sentarse en bordes\" y actívalo.",
+            { cl.lumi.app.overlay.BordesService.activo != null }
+        ) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        Switch(this).apply {
             text = "Pasear y esconderse en los bordes sola"
             isChecked = ajustes.pasear
             setOnCheckedChangeListener { _, v -> ajustes.pasear = v }

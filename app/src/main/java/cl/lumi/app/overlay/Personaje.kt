@@ -21,6 +21,8 @@ import java.io.File
 enum class Estado(val archivo: String) {
     IDLE("idle"), WALK("walk"), FLY("fly"), GLIDE("glide"), DRAG("drag"), FALL("fall"), LAND("land"),
     PEEK("peek"), SLEEP("sleep"), TALK("talk"), THINK("think"), HAPPY("happy"), SAD("sad"),
+    /** Sentada en un borde. Si no hay "sit.webp/gif", se queda de pie (idle) sobre el borde. */
+    SIT("sit"),
 }
 
 /**

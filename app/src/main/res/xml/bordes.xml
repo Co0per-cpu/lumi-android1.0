@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo se piden los cambios de ventana y la forma de la pantalla, para encontrar bordes. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/bordes_descripcion"
+    android:summary="@string/bordes_resumen"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="false"
+    android:isAccessibilityTool="false"
+    android:notificationTimeout="300" />

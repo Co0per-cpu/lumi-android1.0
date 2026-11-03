@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Lumi</string>
+    <string name="bordes_resumen">Para que Lumi se pare y se siente sobre widgets, íconos y ventanas.</string>
+    <string name="bordes_descripcion">Lumi usa este permiso solo para saber dónde están los bordes de los widgets, íconos y ventanas que ves, y así pararse o sentarse encima. Solo mira posiciones: no lee textos, no toca nada por ti y no guarda ni envía nada. Puedes desactivarlo cuando quieras.</string>
 </resources>

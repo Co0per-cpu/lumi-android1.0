@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.res.ColorStateList
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.VibrationEffect
@@ -116,6 +117,7 @@ class OverlayService : LifecycleService(), Puente {
     private var oculto = false          // lo ocultaste tú
     private var ocultoAuto = false      // se ocultó sola porque estás en una app de la lista
     private var reaparecer: Job? = null
+    private var sentadaEn: Rect? = null    // el borde donde está parada o sentada
     private lateinit var filaOcultar: LinearLayout
     private var trabajo: Job? = null
     private var ocultarGlobo: Job? = null
@@ -134,7 +136,7 @@ class OverlayService : LifecycleService(), Puente {
             confirmacion?.complete(false)
             app.registro.anotar("Freno", "Freno de emergencia", "activado: se detuvo todo")
             mostrarGlobo("Frené todo.")
-            personaje.fijar(Estado.IDLE)
+            personaje.fijar(reposo())
         }
     }
 
@@ -155,6 +157,7 @@ class OverlayService : LifecycleService(), Puente {
         personaje.fijar(Estado.IDLE)
         lifecycleScope.launch { vidaPropia() }
         lifecycleScope.launch { vigilarApps() }
+        BordesService.alCambiarPantalla = { lifecycleScope.launch { delay(450); revisarAsiento() } }
         aplicarAjustes()
 
         val prefs = getSharedPreferences("lumi_estado", MODE_PRIVATE)
@@ -182,6 +185,7 @@ class OverlayService : LifecycleService(), Puente {
     override fun onDestroy() {
         activo = null
         Freno.quitar(alFrenar)
+        BordesService.alCambiarPantalla = null
         animacion?.cancel()
         runCatching { voz.cerrar() }
         runCatching { oido.detener() }
@@ -237,7 +241,8 @@ class OverlayService : LifecycleService(), Puente {
         pPersonaje = WindowManager.LayoutParams(
             tamano, altoPj,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -272,6 +277,7 @@ class OverlayService : LifecycleService(), Puente {
                     val dx = e.rawX - x0; val dy = e.rawY - y0
                     if (!arrastrando && hypot(dx, dy) > slop) {
                         arrastrando = true
+                        sentadaEn = null
                         personaje.fijar(Estado.DRAG)
                     }
                     if (arrastrando) {
@@ -302,15 +308,82 @@ class OverlayService : LifecycleService(), Puente {
             else -> {
                 pPersonaje.x = pPersonaje.x.coerceIn(0, w - tamano)
                 moverA(pPersonaje.x, pPersonaje.y)
-                personaje.fijar(Estado.LAND)
-                lifecycleScope.launch { delay(500); if (personaje.estado == Estado.LAND) personaje.fijar(Estado.IDLE) }
+                lifecycleScope.launch {
+                    // Si hay un borde debajo (widget, ícono, ventana), cae y se para encima.
+                    val r = bordeDebajo(altoPantalla() / 2)
+                    if (r != null) pararseEn(r, Estado.FALL)
+                    else {
+                        personaje.fijar(Estado.LAND)
+                        delay(500); if (personaje.estado == Estado.LAND) personaje.fijar(Estado.IDLE)
+                    }
+                }
             }
         }
+    }
+
+    // ======================= Bordes: pararse y sentarse =======================
+
+    /** Distancia desde la parte de arriba de la ventana hasta los pies (las animaciones tienen los pies en 472 de 480). */
+    private fun alturaPies() = altoPj * 472 / 480
+    private fun piesY() = pPersonaje.y + alturaPies()
+
+    /** Bordes de arriba de widgets, íconos y ventanas, tomados con el servicio de accesibilidad (si lo activaste). */
+    private suspend fun bordes(): List<Rect> {
+        if (!ajustes.sentarseEnBordes) return emptyList()
+        val srv = BordesService.activo ?: return emptyList()
+        val w = anchoPantalla(); val h = altoPantalla()
+        val crudos = withContext(Dispatchers.Default) { runCatching { srv.rectangulos(dp(44), dp(20)) }.getOrDefault(emptyList()) }
+        return crudos
+            .filter { it.top > dp(56) && it.top < h - dp(96) }                  // ni la barra de estado ni la de navegación
+            .filter { !(it.width() > w * 0.92f && it.height() > h * 0.45f) }     // no los contenedores de toda la pantalla
+            .distinctBy { Triple(it.top / dp(4), it.left / dp(8), it.right / dp(8)) }
+    }
+
+    /** El borde más cercano debajo de los pies, a lo más [maxCaida] píxeles más abajo. */
+    private suspend fun bordeDebajo(maxCaida: Int): Rect? {
+        val cx = pPersonaje.x + tamano / 2
+        val pies = piesY()
+        return bordes()
+            .filter { cx in (it.left + tamano / 5)..(it.right - tamano / 5) || (it.width() < tamano && cx in it.left..it.right) }
+            .filter { it.top >= pies - dp(10) && it.top - pies <= maxCaida }
+            .minByOrNull { it.top }
+    }
+
+    /** Llega volando o cayendo a un borde, aterriza y se sienta (o se queda de pie si no hay animación de sentarse). */
+    private fun pararseEn(r: Rect, viaje: Estado) {
+        val w = anchoPantalla()
+        val margen = minOf(tamano / 3, r.width() / 2)
+        val x = (pPersonaje.x).coerceIn(r.left - tamano / 2 + margen, r.right - tamano / 2 - margen).coerceIn(-tamano / 3, w - tamano * 2 / 3)
+        val y = r.top - alturaPies()
+        val dist = hypot((x - pPersonaje.x).toFloat(), (y - pPersonaje.y).toFloat())
+        personaje.fijar(viaje)
+        volarA(x, y, (dist * 1.6f).toLong().coerceIn(250, 2500)) {
+            sentadaEn = Rect(r)
+            personaje.fijar(Estado.LAND)
+            lifecycleScope.launch {
+                delay(450)
+                if (personaje.estado == Estado.LAND) personaje.fijar(Estado.SIT)
+            }
+        }
+    }
+
+    /** Cambió la pantalla: si el borde donde estaba ya no existe, se cae al siguiente o queda flotando. */
+    private suspend fun revisarAsiento() {
+        val s = sentadaEn ?: return
+        if (oculto || ocultoAuto || animacion?.isRunning == true) return
+        val cx = pPersonaje.x + tamano / 2
+        val sigue = bordes().any { kotlin.math.abs(it.top - s.top) <= dp(6) && cx in it.left..it.right }
+        if (sigue) return
+        sentadaEn = null
+        val r = bordeDebajo(altoPantalla())
+        if (r != null) pararseEn(r, Estado.FALL)
+        else { personaje.fijar(Estado.GLIDE); delay(600); if (personaje.estado == Estado.GLIDE) personaje.fijar(Estado.IDLE) }
     }
 
     private fun esconderEnBorde(izquierda: Boolean) {
         val w = anchoPantalla()
         val destino = if (izquierda) -(tamano * 0.45f).roundToInt() else w - (tamano * 0.55f).roundToInt()
+        sentadaEn = null
         volarA(destino, pPersonaje.y, 350) {
             personaje.mirar(haciaIzquierda = !izquierda)
             personaje.fijar(Estado.PEEK)
@@ -444,7 +517,8 @@ class OverlayService : LifecycleService(), Puente {
             minOf(anchoPantalla() - dp(24), dp(340)),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -633,16 +707,19 @@ class OverlayService : LifecycleService(), Puente {
         frases.forEach { voz.decir(it) }
     }
 
+    /** Quieta: sentada si está en un borde, de pie si está flotando. */
+    private fun reposo() = if (sentadaEn != null) Estado.SIT else Estado.IDLE
+
     private fun reaccionar(e: Emocion) {
         val (estado, ms) = when (e) {
             Emocion.FELIZ -> Estado.HAPPY to 2500L
             Emocion.TRISTE -> Estado.SAD to 3500L
-            Emocion.NEUTRA -> Estado.IDLE to 0L
+            Emocion.NEUTRA -> reposo() to 0L
         }
         personaje.fijar(estado)
         if (ms > 0) lifecycleScope.launch {
             delay(ms)
-            if (personaje.estado == estado) personaje.fijar(Estado.IDLE)
+            if (personaje.estado == estado) personaje.fijar(reposo())
         }
     }
 
@@ -800,14 +877,14 @@ class OverlayService : LifecycleService(), Puente {
 
     private fun despertar() {
         ultimoToque = System.currentTimeMillis()
-        if (personaje.estado == Estado.SLEEP) personaje.fijar(Estado.IDLE)
+        if (personaje.estado == Estado.SLEEP) personaje.fijar(reposo())
     }
 
     private suspend fun vidaPropia() {
         while (lifecycleScope.isActive) {
             delay(Random.nextLong(25_000, 45_000))
             if (oculto || ocultoAuto || barraAbierta || confirmacion != null || voz.hablando() || trabajo?.isActive == true) continue
-            val quieto = personaje.estado == Estado.IDLE || personaje.estado == Estado.PEEK
+            val quieto = personaje.estado == Estado.IDLE || personaje.estado == Estado.PEEK || personaje.estado == Estado.SIT
             if (!quieto) continue
             if (System.currentTimeMillis() - ultimoToque > 3 * 60_000) {
                 personaje.fijar(Estado.SLEEP)
@@ -815,9 +892,18 @@ class OverlayService : LifecycleService(), Puente {
             }
             if (!ajustes.pasear) continue
             val w = anchoPantalla(); val h = altoPantalla()
-            if (Random.nextFloat() < 0.3f) {
+            val azar = Random.nextFloat()
+            val cerca = if (azar < 0.45f) bordes().filter {
+                kotlin.math.abs(it.top - piesY()) < h / 3 && kotlin.math.abs(it.centerX() - (pPersonaje.x + tamano / 2)) < w / 2
+            } else emptyList()
+            if (cerca.isNotEmpty()) {
+                val r = cerca.random()
+                val subir = r.top - alturaPies() < pPersonaje.y
+                pararseEn(r, if (subir) Estado.FLY else Estado.GLIDE)
+            } else if (azar < 0.65f) {
                 esconderEnBorde(izquierda = Random.nextBoolean())
             } else {
+                sentadaEn = null
                 val nx = (pPersonaje.x + Random.nextInt(-w / 3, w / 3)).coerceIn(dp(8), w - tamano - dp(8))
                 val ny = (pPersonaje.y + Random.nextInt(-h / 6, h / 6)).coerceIn(dp(48), h - altoPj - dp(48))
                 personaje.fijar(if (ny > pPersonaje.y + dp(40)) Estado.GLIDE else Estado.FLY)
