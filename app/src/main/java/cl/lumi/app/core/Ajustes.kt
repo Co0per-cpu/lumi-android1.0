@@ -74,6 +74,20 @@ class Ajustes(context: Context) {
     var tamanoPersonajeDp: Int
         get() = p.getInt("tamano", 140)
         set(v) = p.edit().putInt("tamano", v).apply()
+    var mostrarMic: Boolean
+        get() = p.getBoolean("mostrarMic", true)
+        set(v) = p.edit().putBoolean("mostrarMic", v).apply()
+    var mostrarPie: Boolean
+        get() = p.getBoolean("mostrarPie", true)
+        set(v) = p.edit().putBoolean("mostrarPie", v).apply()
+    var mostrarGlobo: Boolean
+        get() = p.getBoolean("mostrarGlobo", true)
+        set(v) = p.edit().putBoolean("mostrarGlobo", v).apply()
+
+    /** Apps en las que Lumi se esconde sola (juegos, videos, etc.). */
+    fun appsOcultar(): Set<String> = p.getStringSet("appsOcultar", emptySet())!!.toSet()
+    fun fijarAppsOcultar(paquetes: Set<String>) = p.edit().putStringSet("appsOcultar", paquetes).apply()
+
     var pasear: Boolean
         get() = p.getBoolean("pasear", true)
         set(v) = p.edit().putBoolean("pasear", v).apply()

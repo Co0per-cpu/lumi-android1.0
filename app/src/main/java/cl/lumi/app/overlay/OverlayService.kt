@@ -113,13 +113,17 @@ class OverlayService : LifecycleService(), Puente {
 
     private var panelPuesto = false
     private var barraAbierta = false
-    private var oculto = false
+    private var oculto = false          // lo ocultaste tú
+    private var ocultoAuto = false      // se ocultó sola porque estás en una app de la lista
+    private var reaparecer: Job? = null
+    private lateinit var filaOcultar: LinearLayout
     private var trabajo: Job? = null
     private var ocultarGlobo: Job? = null
     private var animacion: ValueAnimator? = null
     private var confirmacion: CompletableDeferred<Boolean>? = null
     private var ultimoToque = System.currentTimeMillis()
     private val tamano get() = dp(ajustes.tamanoPersonajeDp)
+    private val altoPj get() = tamano * 480 / 440
 
     private val alFrenar: () -> Unit = {
         lifecycleScope.launch {
@@ -150,6 +154,8 @@ class OverlayService : LifecycleService(), Puente {
         crearPanel()
         personaje.fijar(Estado.IDLE)
         lifecycleScope.launch { vidaPropia() }
+        lifecycleScope.launch { vigilarApps() }
+        aplicarAjustes()
 
         val prefs = getSharedPreferences("lumi_estado", MODE_PRIVATE)
         lifecycleScope.launch {
@@ -190,21 +196,29 @@ class OverlayService : LifecycleService(), Puente {
         if (level >= TRIM_MEMORY_RUNNING_LOW && trabajo?.isActive != true) Local.liberar()
     }
 
-    private fun arrancarPrimerPlano() {
+    private fun notificacion(texto: String?): Notification {
         fun pi(accion: String, code: Int) = PendingIntent.getService(
             this, code, Intent(this, OverlayService::class.java).setAction(accion), PendingIntent.FLAG_IMMUTABLE
         )
         val abrir = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val n: Notification = NotificationCompat.Builder(this, LumiApp.CANAL_SERVICIO)
+        return NotificationCompat.Builder(this, LumiApp.CANAL_SERVICIO)
             .setSmallIcon(R.drawable.ic_lumi)
-            .setContentTitle("Lumi está activa")
-            .setContentText("Mantén presionada a Lumi o toca Frenar para detener todo.")
+            .setContentTitle(if (oculto) "Lumi está oculta" else "Lumi está activa")
+            .setContentText(texto ?: "Mantén presionada a Lumi o toca Frenar para detener todo.")
             .setOngoing(true)
             .setContentIntent(abrir)
             .addAction(0, "Frenar", pi(ACCION_FRENO, 1))
-            .addAction(0, "Ocultar / mostrar", pi(ACCION_OCULTAR, 2))
+            .addAction(0, if (oculto) "Mostrar" else "Ocultar", pi(ACCION_OCULTAR, 2))
             .addAction(0, "Cerrar Lumi", pi(ACCION_SALIR, 3))
             .build()
+    }
+
+    private fun actualizarNotificacion(texto: String?) {
+        runCatching { getSystemService(android.app.NotificationManager::class.java).notify(ID_NOTIF, notificacion(texto)) }
+    }
+
+    private fun arrancarPrimerPlano() {
+        val n = notificacion(null)
         val conMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val tipo = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
             (if (conMic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
@@ -221,7 +235,7 @@ class OverlayService : LifecycleService(), Puente {
     private fun crearPersonaje() {
         personaje = Personaje(this, lifecycleScope)
         pPersonaje = WindowManager.LayoutParams(
-            tamano, tamano,
+            tamano, altoPj,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
@@ -273,7 +287,7 @@ class OverlayService : LifecycleService(), Puente {
 
     private fun moverA(x: Int, y: Int) {
         pPersonaje.x = x
-        pPersonaje.y = y.coerceIn(0, altoPantalla() - tamano)
+        pPersonaje.y = y.coerceIn(0, altoPantalla() - altoPj)
         runCatching { wm.updateViewLayout(personaje, pPersonaje) }
         reubicarPanel()
     }
@@ -361,6 +375,25 @@ class OverlayService : LifecycleService(), Puente {
             addView(boton("No", false))
             addView(boton("Sí", true))
         }
+        fun opcion(t: String, minutos: Int?) = Button(this).apply {
+            text = t
+            isAllCaps = false
+            setTextColor(tema.texto)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            backgroundTintList = ColorStateList.valueOf(tema.fondo)
+            setOnClickListener { ocultar(minutos) }
+        }
+        filaOcultar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            visibility = View.GONE
+            addView(TextView(this@OverlayService).apply {
+                text = "Ocultar:"; setTextColor(tema.texto); setPadding(0, 0, dp(4), 0)
+            })
+            addView(opcion("15 min", 15))
+            addView(opcion("1 hora", 60))
+            addView(opcion("Hasta que la llame", null))
+        }
         campo = EditText(this).apply {
             hint = "Escríbele a Lumi…"
             setTextColor(tema.texto)
@@ -392,6 +425,10 @@ class OverlayService : LifecycleService(), Puente {
             addView(campo, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(botonMic)
             addView(icono(android.R.drawable.ic_menu_send, "Enviar") { enviarCampo() })
+            addView(icono(android.R.drawable.ic_menu_view, "Ocultar") {
+                filaOcultar.visibility = if (filaOcultar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                reubicarPanel()
+            })
             addView(icono(android.R.drawable.ic_menu_close_clear_cancel, "Cerrar") { alternarBarra() })
         }
         val margen = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -399,6 +436,7 @@ class OverlayService : LifecycleService(), Puente {
         panel.addView(globo, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         panel.addView(pie)
         panel.addView(filaConfirmar, margen)
+        panel.addView(filaOcultar, LinearLayout.LayoutParams(margen))
         panel.addView(barra, LinearLayout.LayoutParams(margen))
         globo.visibility = View.GONE
 
@@ -416,7 +454,7 @@ class OverlayService : LifecycleService(), Puente {
     }
 
     private fun ponerPanel() {
-        if (oculto) return
+        if (oculto || ocultoAuto) return
         if (!panelPuesto) {
             reubicarPanel(agregar = true)
             runCatching { wm.addView(panel, pPanel) }.onSuccess { panelPuesto = true }
@@ -446,7 +484,7 @@ class OverlayService : LifecycleService(), Puente {
         val centro = pPersonaje.x + tamano / 2
         pPanel.x = (centro - pPanel.width / 2).coerceIn(dp(8), maxOf(dp(8), w - pPanel.width - dp(8)))
         val arriba = pPersonaje.y - alto - dp(4)
-        pPanel.y = if (arriba > dp(32)) arriba else minOf(pPersonaje.y + tamano + dp(4), h - alto - dp(8))
+        pPanel.y = if (arriba > dp(32)) arriba else minOf(pPersonaje.y + altoPj + dp(4), h - alto - dp(8))
         if (panelPuesto) runCatching { wm.updateViewLayout(panel, pPanel) }
     }
 
@@ -472,22 +510,89 @@ class OverlayService : LifecycleService(), Puente {
     }
 
     private fun alternarOculto() {
-        oculto = !oculto
-        personaje.visibility = if (oculto) View.GONE else View.VISIBLE
-        if (oculto) {
-            if (barraAbierta) alternarBarra()
-            if (panelPuesto) { runCatching { wm.removeView(panel) }; panelPuesto = false }
+        if (oculto) mostrar() else ocultar(null)
+    }
+
+    /** Oculta a Lumi. [minutos] = null: hasta que la vuelvas a mostrar (notificación o app). */
+    fun ocultar(minutos: Int?) {
+        filaOcultar.visibility = View.GONE
+        if (barraAbierta) alternarBarra()
+        voz.detener(); oido.detener()
+        oculto = true
+        aplicarVisibilidad()
+        reaparecer?.cancel()
+        if (minutos != null) reaparecer = lifecycleScope.launch {
+            delay(minutos * 60_000L)
+            mostrar()
+        }
+        val cuando = if (minutos != null) "Vuelve sola en $minutos min." else "Toca Ocultar / mostrar para que vuelva."
+        actualizarNotificacion("Lumi está oculta. $cuando")
+        app.registro.anotar("Lumi", "Ocultar ${minutos?.let { "$it min" } ?: "hasta que la llames"}", "oculta")
+    }
+
+    fun mostrar() {
+        reaparecer?.cancel()
+        oculto = false
+        aplicarVisibilidad()
+        actualizarNotificacion(null)
+        despertar()
+    }
+
+    fun estaOculta() = oculto
+
+    private fun aplicarVisibilidad() {
+        val esconder = oculto || ocultoAuto
+        personaje.visibility = if (esconder) View.GONE else View.VISIBLE
+        if (esconder && panelPuesto) { runCatching { wm.removeView(panel) }; panelPuesto = false }
+    }
+
+    /** Lo llama Ajustes cuando cambias tamaño u opciones de la burbuja. */
+    fun aplicarAjustes() {
+        pPersonaje.width = tamano
+        pPersonaje.height = altoPj
+        runCatching { wm.updateViewLayout(personaje, pPersonaje) }
+        botonMic.visibility = if (ajustes.mostrarMic) View.VISIBLE else View.GONE
+        if (!ajustes.mostrarPie) pie.visibility = View.GONE
+        reubicarPanel()
+    }
+
+    /** Se esconde sola mientras usas alguna de las apps elegidas en Ajustes (necesita Acceso al uso). */
+    private suspend fun vigilarApps() {
+        val usm = getSystemService(android.app.usage.UsageStatsManager::class.java)
+        var ultima: String? = null
+        while (lifecycleScope.isActive) {
+            delay(1500)
+            val lista = ajustes.appsOcultar()
+            if (lista.isEmpty() || !cl.lumi.app.acciones.Apps.tieneAccesoUso(this)) {
+                if (ocultoAuto) { ocultoAuto = false; aplicarVisibilidad() }
+                continue
+            }
+            val ahora = System.currentTimeMillis()
+            val ev = usm.queryEvents(ahora - 10_000, ahora)
+            val e = android.app.usage.UsageEvents.Event()
+            while (ev.hasNextEvent()) {
+                ev.getNextEvent(e)
+                if (e.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED) ultima = e.packageName
+            }
+            val debe = ultima != null && ultima in lista
+            if (debe != ocultoAuto) {
+                ocultoAuto = debe
+                if (debe) { voz.detener(); oido.detener(); if (barraAbierta) alternarBarra() }
+                aplicarVisibilidad()
+            }
         }
     }
 
     // ======================= Globo y voz =======================
 
     private fun mostrarGlobo(texto: String, etiqueta: String? = null) {
+        // "Solo voz": sin globo, salvo cuando Lumi pregunta algo o tienes la barra abierta.
+        if (!ajustes.mostrarGlobo && confirmacion == null && !barraAbierta && ajustes.hablar) return
         ocultarGlobo?.cancel()
         globo.text = texto
         globo.visibility = View.VISIBLE
         pie.text = etiqueta.orEmpty()
-        pie.visibility = if (etiqueta != null) View.VISIBLE else View.GONE
+        pie.visibility = if (etiqueta != null && ajustes.mostrarPie) View.VISIBLE else View.GONE
         ponerPanel()
         panel.post { reubicarPanel() }
     }
@@ -701,7 +806,7 @@ class OverlayService : LifecycleService(), Puente {
     private suspend fun vidaPropia() {
         while (lifecycleScope.isActive) {
             delay(Random.nextLong(25_000, 45_000))
-            if (oculto || barraAbierta || confirmacion != null || voz.hablando() || trabajo?.isActive == true) continue
+            if (oculto || ocultoAuto || barraAbierta || confirmacion != null || voz.hablando() || trabajo?.isActive == true) continue
             val quieto = personaje.estado == Estado.IDLE || personaje.estado == Estado.PEEK
             if (!quieto) continue
             if (System.currentTimeMillis() - ultimoToque > 3 * 60_000) {
@@ -714,7 +819,7 @@ class OverlayService : LifecycleService(), Puente {
                 esconderEnBorde(izquierda = Random.nextBoolean())
             } else {
                 val nx = (pPersonaje.x + Random.nextInt(-w / 3, w / 3)).coerceIn(dp(8), w - tamano - dp(8))
-                val ny = (pPersonaje.y + Random.nextInt(-h / 6, h / 6)).coerceIn(dp(48), h - tamano - dp(48))
+                val ny = (pPersonaje.y + Random.nextInt(-h / 6, h / 6)).coerceIn(dp(48), h - altoPj - dp(48))
                 personaje.fijar(if (ny > pPersonaje.y + dp(40)) Estado.GLIDE else Estado.FLY)
                 volarA(nx, ny, Random.nextLong(1500, 3000)) { personaje.fijar(Estado.IDLE) }
             }

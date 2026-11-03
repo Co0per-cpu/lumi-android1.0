@@ -17,6 +17,8 @@ android {
         val numero = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = numero
         versionName = "0.1.$numero"
+        // Solo teléfonos reales (ARM de 64 bits): el APK pesa la mitad.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     // Firma fija para que cada APK nuevo se instale encima del anterior sin desinstalar.

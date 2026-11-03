@@ -18,7 +18,7 @@ Versión de teléfono de Lumi, en Kotlin nativo. Mantiene las reglas del PC: nad
    - *Micrófono* y *Notificaciones*.
    - *Acceso al uso*: sirve para **comprobar** que una app se abrió. Sin él, Lumi te avisa que no puede confirmarlo.
    - *Alarmas exactas*: para que los recordatorios lleguen a la hora.
-2. **Personaje:** *Importar personaje (.zip)* y elige `Lumi-personaje-fluido.zip`. Se usan los WebP y `tiempos.json` tal cual. (También puedes copiar los WebP a `app/src/main/assets/personaje/` antes de compilar.)
+2. **Personaje:** ya viene incluido (tus GIF convertidos a WebP con transparencia, sin cambiar el diseño). Para reemplazarlo, usa *Importar personaje (.zip)*.
 3. Toca **Iniciar Lumi**.
 
 ## Gestos
@@ -30,7 +30,9 @@ Versión de teléfono de Lumi, en Kotlin nativo. Mantiene las reglas del PC: nad
 | Mantener presionada | **Freno de emergencia**: detiene voz, micrófono, acciones y preguntas |
 | Arrastrar | La mueve; si la sueltas en un borde, se esconde asomándose |
 
-La notificación fija también tiene **Frenar**, **Ocultar/mostrar** y **Cerrar Lumi**.
+La notificación fija también tiene **Frenar**, **Ocultar/Mostrar** y **Cerrar Lumi**.
+
+**Ocultar:** el botón del ojo en la barra la oculta 15 minutos, 1 hora o hasta que la llames. En Ajustes puedes elegir apps donde se esconde sola (requiere *Acceso al uso*), cambiar su tamaño (de Mini a Muy grande) y apagar el globo de texto, el botón de micrófono o la etiqueta de qué IA respondió.
 
 ## IA: PC por Wi-Fi + teléfono
 

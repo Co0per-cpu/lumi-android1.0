@@ -305,22 +305,58 @@ class MainActivity : AppCompatActivity() {
 
         // ===== Apariencia =====
         titulo("Personaje y apariencia")
-        nota("Importa el zip del personaje de la versión de PC (Lumi-personaje-fluido.zip): se usan sus WebP y tiempos.json tal cual, sin cambiar el diseño.")
+        nota("El personaje ya viene incluido. Si quieres reemplazar sus animaciones, importa un zip con los GIF o WebP (idle, talk, sad_in…); se usan tal cual, sin cambiar el diseño.")
         val resPj = nota("")
         refrescos += {
             val n = File(filesDir, "personaje").listFiles()?.count { it.extension in listOf("webp", "gif", "png") } ?: 0
-            resPj.text = if (n > 0) "$n animaciones importadas." else "Sin animaciones importadas todavía."
+            resPj.text = if (n > 0) "Usando $n animaciones importadas." else "Usando el personaje incluido."
         }
         boton("Importar personaje (.zip)") { elegirPersonaje.launch(arrayOf("application/zip", "application/x-zip-compressed", "*/*")) }
         nota("Tema del globo")
         selector(Tema.entries, ajustes.tema, { it.titulo }) { ajustes.tema = it }
-        nota("Tamaño del personaje (se aplica al reiniciar Lumi)")
-        selector(listOf(100, 120, 140, 170, 200), ajustes.tamanoPersonajeDp, { "$it dp" }) { ajustes.tamanoPersonajeDp = it }
+        nota("Tamaño del personaje")
+        val tamanos = listOf(60 to "Mini", 80 to "Muy pequeño", 100 to "Pequeño", 120 to "Mediano", 140 to "Normal", 170 to "Grande", 200 to "Muy grande")
+        selector(tamanos.map { it.first }, ajustes.tamanoPersonajeDp, { t -> tamanos.first { it.first == t }.second }) {
+            ajustes.tamanoPersonajeDp = it
+            OverlayService.activo?.aplicarAjustes()
+        }
         Switch(this).apply {
             text = "Pasear y esconderse en los bordes sola"
             isChecked = ajustes.pasear
             setOnCheckedChangeListener { _, v -> ajustes.pasear = v }
         }.also { raiz.addView(it) }
+
+        // ===== Ocultar =====
+        titulo("Ocultar a Lumi")
+        nota("En la barra de Lumi, el botón del ojo la oculta 15 minutos, 1 hora o hasta que la llames. También puedes ocultarla y mostrarla desde la notificación o aquí.")
+        val bOcultar = boton("") {
+            val s = OverlayService.activo ?: return@boton
+            if (s.estaOculta()) s.mostrar() else s.ocultar(null)
+            refrescar()
+        }
+        refrescos += {
+            val s = OverlayService.activo
+            bOcultar.visibility = if (s == null) View.GONE else View.VISIBLE
+            bOcultar.text = if (s?.estaOculta() == true) "Mostrar a Lumi" else "Ocultar a Lumi ahora"
+        }
+        val resApps = nota("")
+        refrescos += {
+            val n = ajustes.appsOcultar().size
+            resApps.text = when {
+                n == 0 -> "No se oculta sola en ninguna app."
+                !Apps.tieneAccesoUso(this) -> "Se oculta en $n apps, pero falta dar \"Acceso al uso\" (arriba) para que funcione."
+                else -> "Se oculta sola mientras usas $n apps."
+            }
+        }
+        boton("Elegir apps donde se esconde sola") { elegirAppsOcultar() }
+        fun interruptor(t: String, v: Boolean, guardar: (Boolean) -> Unit) = Switch(this).apply {
+            text = t
+            isChecked = v
+            setOnCheckedChangeListener { _, x -> guardar(x); OverlayService.activo?.aplicarAjustes() }
+        }.also { raiz.addView(it) }
+        interruptor("Mostrar el globo de texto (si lo apagas, solo habla)", ajustes.mostrarGlobo) { ajustes.mostrarGlobo = it }
+        interruptor("Mostrar el botón de micrófono en la barra", ajustes.mostrarMic) { ajustes.mostrarMic = it }
+        interruptor("Mostrar qué IA respondió (PC o teléfono)", ajustes.mostrarPie) { ajustes.mostrarPie = it }
 
         // ===== Otros =====
         titulo("Clima")
@@ -338,6 +374,22 @@ class MainActivity : AppCompatActivity() {
         boton("Borrar historial de conversación") {
             Historial(this).borrar(); aviso("Historial borrado. Reinicia Lumi si estaba activa.")
         }
+    }
+
+    private fun elegirAppsOcultar() {
+        val apps = Apps.instaladas(this)
+        val elegidas = ajustes.appsOcultar().toMutableSet()
+        val marcadas = apps.map { it.paquete in elegidas }.toBooleanArray()
+        AlertDialog.Builder(this).setTitle("Lumi se esconde en…")
+            .setMultiChoiceItems(apps.map { it.etiqueta }.toTypedArray(), marcadas) { _, k, si ->
+                if (si) elegidas += apps[k].paquete else elegidas -= apps[k].paquete
+            }
+            .setPositiveButton("Guardar") { _, _ ->
+                ajustes.fijarAppsOcultar(elegidas)
+                if (elegidas.isNotEmpty() && !Apps.tieneAccesoUso(this)) aviso("Para esto, dale a Lumi \"Acceso al uso\" en Permisos.")
+                refrescar()
+            }
+            .setNegativeButton("Cancelar", null).show()
     }
 
     private fun nuevoAtajo() {
