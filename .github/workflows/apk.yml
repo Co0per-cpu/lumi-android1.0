@@ -1,1 +1,56 @@
+name: Compilar APK de Lumi
 
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Compilar
+        id: compilar
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee registro-compilacion.txt
+
+      - name: Publicar el APK para descargarlo desde el teléfono
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk Lumi.apk
+          gh release create "v0.1.${{ github.run_number }}" Lumi.apk \
+            --title "Lumi 0.1.${{ github.run_number }}" \
+            --notes "Descarga Lumi.apk desde el teléfono e instálalo." --latest
+
+      - name: Guardar el registro de compilación (para corregir errores)
+        if: always()
+        run: |
+          git config user.name "lumi-bot"
+          git config user.email "lumi-bot@users.noreply.github.com"
+          cp registro-compilacion.txt /tmp/registro.txt || echo "sin registro" > /tmp/registro.txt
+          git checkout --orphan registro
+          git rm -rf --cached . > /dev/null
+          cp /tmp/registro.txt registro-compilacion.txt
+          echo "${{ job.status }} ${{ github.sha }}" > estado.txt
+          git add registro-compilacion.txt estado.txt
+          git commit -m "Registro de compilación ${{ github.run_number }}"
+          git push -f origin registro

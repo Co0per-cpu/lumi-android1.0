@@ -1,0 +1,8 @@
+Aquí van las animaciones del personaje (las mismas de la versión de PC):
+idle.webp, walk.webp, fly.webp, glide.webp, drag.webp, fall.webp, land.webp,
+peek.webp, sleep.webp, talk.webp, think.webp, happy.webp, sad.webp, sad_in.webp
+y tiempos.json.
+
+Dos formas de ponerlas:
+1) Copiarlas a esta carpeta antes de compilar (quedan dentro de la app), o
+2) Importar Lumi-personaje-fluido.zip desde Ajustes de Lumi > Personaje (sin recompilar).
