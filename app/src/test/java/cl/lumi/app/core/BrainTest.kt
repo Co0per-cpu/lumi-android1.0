@@ -26,6 +26,17 @@ class BrainTest {
         assertEquals(Orden.QueSuena, e("¿qué está sonando?"))
     }
 
+    @Test fun smartwatch() {
+        assertEquals(Orden.RelojMedir, e("mide mi pulso"))
+        assertEquals(Orden.RelojPulso, e("¿cómo está mi pulso?"))
+        assertEquals(Orden.RelojPasos, e("¿cuántos pasos llevo?"))
+        assertEquals(Orden.RelojResumen, e("¿cómo voy hoy?"))
+        assertEquals(Orden.RelojEjercicio, e("¿cómo me fue en el último entrenamiento?"))
+        assertEquals(Orden.RelojSincronizar, e("sincroniza el reloj"))
+        assertEquals(Orden.RelojAvisar("compra pan"), e("manda al reloj que compra pan"))
+        assertEquals(Orden.RelojAvisar("hola"), e("envía hola al reloj"))
+    }
+
     @Test fun volumen() {
         assertEquals(Orden.VolumenSubir, e("sube el volumen"))
         assertEquals(Orden.VolumenFijar(40), e("volumen al 40"))

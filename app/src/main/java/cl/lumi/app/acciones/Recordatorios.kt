@@ -99,6 +99,11 @@ class RecordatorioReceiver : BroadcastReceiver() {
                 .build()
             ctx.getSystemService(NotificationManager::class.java).notify(id, n)
         }
+        // Si tienes el smartwatch conectado (app Mi Reloj), también te llega a la muñeca.
+        Thread {
+            if (MiReloj.avisarSiSePuede(ctx, "Recordatorio", texto))
+                LumiApp.instancia.registro.anotar("Recordatorios", "Aviso al reloj: $texto", "enviado (sin comprobar)")
+        }.start()
         // Si Lumi está en pantalla, también lo dice.
         OverlayService.activo?.decirDesdeFuera("Te recuerdo: $texto")
     }

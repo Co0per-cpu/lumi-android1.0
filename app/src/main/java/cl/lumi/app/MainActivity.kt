@@ -30,6 +30,7 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import cl.lumi.app.acciones.Apps
+import cl.lumi.app.acciones.MiReloj
 import cl.lumi.app.core.Categoria
 import cl.lumi.app.core.ModoIa
 import cl.lumi.app.core.Nivel
@@ -177,6 +178,15 @@ class MainActivity : AppCompatActivity() {
         }
         permisoFila("Alarmas exactas", "Para que los recordatorios lleguen a la hora justa.", { getSystemService(AlarmManager::class.java).canScheduleExactAlarms() }) {
             startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+        }
+
+        permisoFila(
+            "Datos de Mi Reloj",
+            "Para que Lumi lea tu pulso, pasos y ejercicios del smartwatch, y te mande avisos a la muñeca. Requiere la app Mi Reloj instalada.",
+            { tienePermiso(MiReloj.PERMISO) }
+        ) {
+            if (!MiReloj.instalada(this)) aviso("Primero instala Mi Reloj y vincula tu reloj.")
+            else pedirPermisos.launch(arrayOf(MiReloj.PERMISO))
         }
 
         // ===== IA =====

@@ -53,6 +53,18 @@ En *Ajustes > Inteligencia artificial* eliges Automático (PC si está, si no el
 2. Pega tu Client ID en Lumi y toca *Conectar Spotify*. Se abre el login; al aceptar, vuelve a Lumi.
 3. Los tokens quedan cifrados con una llave del Android Keystore. Controlar la música requiere Premium.
 
+## Smartwatch (app Mi Reloj)
+
+Lumi puede usar tu smartwatch Lhotse a través de la app **Mi Reloj** (repositorio `lhotse-watch`), que es la que queda vinculada al reloj.
+
+1. Instala Mi Reloj y vincula el reloj.
+2. En Lumi, en *Permisos del teléfono*, toca **Datos de Mi Reloj** y acepta.
+3. En *Qué puede hacer Lumi* puedes cambiar el nivel de **Smartwatch** (por defecto, Permitido).
+
+Ejemplos: "¿cómo está mi pulso?" · "mide mi pulso" · "¿cuántos pasos llevo?" · "¿cómo voy hoy?" · "¿cómo me fue en el último entrenamiento?" · "sincroniza el reloj" · "manda al reloj que compre pan". Los recordatorios de Lumi también llegan al reloj si está conectado.
+
+Lumi solo dice lo que lee de Mi Reloj: si el reloj no está conectado, te lo dice. Los avisos al reloj quedan como *sin comprobar*, porque no puede ver su pantalla.
+
 ## Qué entiende (ejemplos)
 
 - "Oye, ¿me puedes abrir WhatsApp?" · "abre música" (con un atajo propio)

@@ -29,6 +29,14 @@ sealed class Orden {
     data class Wikipedia(val q: String, val original: String) : Orden()
     data class Web(val q: String) : Orden()
     data class Clima(val ciudad: String?) : Orden()
+    // Smartwatch (a través de la app Mi Reloj)
+    object RelojPulso : Orden()
+    object RelojMedir : Orden()
+    object RelojPasos : Orden()
+    object RelojResumen : Orden()
+    object RelojEjercicio : Orden()
+    object RelojSincronizar : Orden()
+    data class RelojAvisar(val texto: String) : Orden()
     data class Charla(val texto: String) : Orden()
 }
 
@@ -99,6 +107,20 @@ object Brain {
         if (Regex("(volumen|sonido)\\s+(al\\s+)?maximo").containsMatchIn(n)) return Orden.VolumenFijar(100)
         if (Regex("^(sube|subele|subir|aumenta|mas)\\s+(el\\s+|un poco el\\s+)?(volumen|sonido)").containsMatchIn(n)) return Orden.VolumenSubir
         if (Regex("^(baja|bajale|bajar|disminuye|menos)\\s+(el\\s+|un poco el\\s+)?(volumen|sonido)").containsMatchIn(n)) return Orden.VolumenBajar
+
+        // --- Smartwatch (Mi Reloj) ---
+        Regex("^(manda|mandame|envia|enviame|avisa|avisame|escribe|pon)\\s+(al|en el|a mi|en mi)\\s+reloj\\s+(que\\s+|esto:?\\s+)?(.+)$").find(n)?.let {
+            return Orden.RelojAvisar(grupo(it, 4))
+        }
+        Regex("^(manda|mandame|envia|enviame)\\s+(.+?)\\s+(al|a mi)\\s+reloj$").find(n)?.let {
+            return Orden.RelojAvisar(grupo(it, 2))
+        }
+        if (Regex("^(mide|medir|mideme|tomame|toma|revisa|chequea)\\s+(me\\s+)?(el\\s+|mi\\s+)?(pulso|ritmo cardiaco|frecuencia cardiaca)").containsMatchIn(n)) return Orden.RelojMedir
+        if (Regex("^(sincroniza|sincronizar|actualiza)\\s+(el\\s+|mi\\s+)?reloj$").matches(n)) return Orden.RelojSincronizar
+        if (Regex("(ultimo|ultima)\\s+(ejercicio|entrenamiento|entreno|caminata|carrera|salida)|como me fue (en|con) el (ejercicio|entrenamiento|entreno)").containsMatchIn(n)) return Orden.RelojEjercicio
+        if (Regex("(cuantos pasos|mis pasos|pasos (llevo|he dado|hoy|tengo))").containsMatchIn(n)) return Orden.RelojPasos
+        if (Regex("(como (esta|va|anda) mi (pulso|corazon|ritmo cardiaco)|cual es mi pulso|que pulso tengo|^mi pulso$|^(el )?pulso$|a cuanto (esta|tengo) el (pulso|corazon))").containsMatchIn(n)) return Orden.RelojPulso
+        if (Regex("(como voy hoy|resumen (del|de mi) reloj|resumen de hoy|que dice (mi|el) reloj|datos (del|de mi) reloj|mi actividad de hoy|cuantas calorias (llevo|he quemado|quemé|queme))").containsMatchIn(n)) return Orden.RelojResumen
 
         // --- Alarma ---
         if (Regex("^(despiertame|levantame|alarma|pon una alarma|ponme una alarma|pon alarma|crea una alarma|programa una alarma|ponme alarma)\\b").containsMatchIn(n)) {

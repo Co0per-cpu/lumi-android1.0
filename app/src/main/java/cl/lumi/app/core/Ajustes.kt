@@ -13,6 +13,7 @@ enum class Categoria(val titulo: String, val porDefecto: Nivel) {
     SPOTIFY("Poner música en Spotify", Nivel.PERMITIDO),
     WEB("Buscar en la web y YouTube", Nivel.PERMITIDO),
     INICIO("Ir a la pantalla de inicio", Nivel.PREGUNTAR),
+    RELOJ("Smartwatch: leer datos, medir y enviar avisos", Nivel.PERMITIDO),
 }
 
 enum class Nivel(val titulo: String) {

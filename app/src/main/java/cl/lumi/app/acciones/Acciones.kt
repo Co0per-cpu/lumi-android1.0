@@ -56,6 +56,13 @@ class Acciones(private val ctx: Context, private val puente: Puente) {
             is Orden.Web -> web(orden.q)
             is Orden.Wikipedia -> Info.wikipedia(orden.q)?.let { Resultado.info(it) } ?: return null
             is Orden.Clima -> clima(orden.ciudad)
+            Orden.RelojPulso -> relojPulso()
+            Orden.RelojMedir -> relojMedir(token)
+            Orden.RelojPasos -> relojPasos()
+            Orden.RelojResumen -> relojResumen()
+            Orden.RelojEjercicio -> relojEjercicio()
+            Orden.RelojSincronizar -> relojSincronizar(token)
+            is Orden.RelojAvisar -> relojAvisar(orden.texto)
         }
         return r
     }
@@ -324,6 +331,132 @@ class Acciones(private val ctx: Context, private val puente: Puente) {
         val buscar = Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, q)
         val ver = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(q)))
         return abrirYComprobar(Categoria.WEB, "Buscar: $q", listOf(buscar, ver), "Busqué $q.")
+    }
+
+    // ---------------- Smartwatch (app Mi Reloj) ----------------
+
+    /** null = todo listo para hablar con Mi Reloj; si no, lo que hay que decir. */
+    private fun relojNoListo(): Resultado? = when {
+        !MiReloj.instalada(ctx) -> Resultado.falla("No encuentro la app Mi Reloj en el teléfono. Es la que se conecta a tu smartwatch.")
+        !MiReloj.tienePermiso(ctx) -> Resultado.info("Para leer tu reloj necesito el permiso \"Datos de Mi Reloj\". Dámelo en Ajustes de Lumi, en Permisos del teléfono.")
+        else -> null
+    }
+
+    /** Lee el estado actual; si el reloj no está conectado, lo dice en vez de inventar. */
+    private suspend fun relojAhora(): Pair<MiReloj.Ahora?, Resultado?> {
+        relojNoListo()?.let { return null to it }
+        MiReloj.pedir(ctx, "refrescar")
+        delay(1500)
+        val a = MiReloj.ahora(ctx) ?: return null to Resultado.falla("Mi Reloj no me respondió.")
+        if (!a.vinculado) return null to Resultado.info("Mi Reloj todavía no tiene un reloj vinculado.")
+        return a to null
+    }
+
+    private fun km(m: Int) = if (m >= 1000) "%.1f km".format(Locale.forLanguageTag("es-CL"), m / 1000.0) else "$m metros"
+
+    private suspend fun relojPulso(): Resultado {
+        permiso(Categoria.RELOJ, "¿Leo tu pulso del reloj?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Leer pulso", err!!)
+        val r = when {
+            !a.conectado -> {
+                val dia = MiReloj.pulsoReciente(ctx)
+                if (dia != null && dia.promedio > 0)
+                    Resultado.info("El reloj no está conectado ahora. Lo último sincronizado (${dia.fecha}): promedio ${dia.promedio}, en reposo ${dia.reposo}, máximo ${dia.maximo} ppm.")
+                else Resultado.info("El reloj no está conectado ahora, así que no puedo leer tu pulso.")
+            }
+            a.pulsoMedido > 0 -> Resultado.ok("Tu última medición dio ${a.pulsoMedido} pulsaciones por minuto.")
+            a.pulso > 0 -> Resultado.ok("Tu reloj marca ${a.pulso} pulsaciones por minuto.")
+            else -> Resultado.info("El reloj está conectado, pero no tiene un pulso reciente. Si quieres, dime \"mide mi pulso\".")
+        }
+        return anotar(Categoria.RELOJ, "Leer pulso", r)
+    }
+
+    private suspend fun relojMedir(token: Int): Resultado {
+        permiso(Categoria.RELOJ, "¿Le pido al reloj que mida tu pulso?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Medir pulso", err!!)
+        if (!a.conectado) return anotar(Categoria.RELOJ, "Medir pulso", Resultado.falla("El reloj no está conectado, no puedo medir."))
+        if (!MiReloj.pedir(ctx, "medir_pulso")) return anotar(Categoria.RELOJ, "Medir pulso", Resultado.falla("Mi Reloj no aceptó la medición."))
+        puente.avisar("Midiendo tu pulso… quédate quieto un momento.")
+        delay(2000)
+        repeat(30) {
+            if (!Freno.vigente(token)) return Resultado.info("Frenado.")
+            val v = MiReloj.ahora(ctx)?.pulsoMedido ?: 0
+            if (v > 0) return anotar(Categoria.RELOJ, "Medir pulso", Resultado.ok("Listo: $v pulsaciones por minuto."))
+            delay(1500)
+        }
+        return anotar(Categoria.RELOJ, "Medir pulso", Resultado.falla("El reloj no me devolvió la medición. Revisa que esté bien puesto en la muñeca."))
+    }
+
+    private suspend fun relojPasos(): Resultado {
+        permiso(Categoria.RELOJ, "¿Leo tus pasos del reloj?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Leer pasos", err!!)
+        if (!a.conectado) return anotar(Categoria.RELOJ, "Leer pasos", Resultado.info("El reloj no está conectado ahora, así que no tengo tus pasos de hoy."))
+        val falta = a.metaPasos - a.pasos
+        val meta = when {
+            a.metaPasos <= 0 -> ""
+            falta <= 0 -> " ¡Ya cumpliste tu meta de ${a.metaPasos}!"
+            else -> " Te faltan $falta para tu meta de ${a.metaPasos}."
+        }
+        return anotar(Categoria.RELOJ, "Leer pasos", Resultado.ok("Llevas ${a.pasos} pasos hoy.$meta"))
+    }
+
+    private suspend fun relojResumen(): Resultado {
+        permiso(Categoria.RELOJ, "¿Leo el resumen de tu reloj?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Resumen", err!!)
+        if (!a.conectado) return anotar(Categoria.RELOJ, "Resumen", Resultado.info("El reloj no está conectado ahora. Acércalo al teléfono y vuelve a preguntarme."))
+        val partes = mutableListOf("Hoy llevas ${a.pasos} pasos, ${a.calorias} calorías y ${km(a.distanciaM)}")
+        if (a.minutosActivos > 0) partes += "${a.minutosActivos} minutos activo"
+        val pulso = if (a.pulsoMedido > 0) a.pulsoMedido else a.pulso
+        var texto = partes.joinToString(", ") + "."
+        if (pulso > 0) texto += " Tu pulso está en $pulso."
+        return anotar(Categoria.RELOJ, "Resumen", Resultado.ok(texto))
+    }
+
+    private suspend fun relojEjercicio(): Resultado {
+        permiso(Categoria.RELOJ, "¿Leo tu último ejercicio?")?.let { return it }
+        relojNoListo()?.let { return anotar(Categoria.RELOJ, "Último ejercicio", it) }
+        val e = MiReloj.ultimoEjercicio(ctx)
+            ?: return anotar(Categoria.RELOJ, "Último ejercicio", Resultado.info("No tengo ejercicios guardados. Registra uno en el reloj y sincronízalo en Mi Reloj."))
+        val min = e.duracionS / 60
+        val extra = buildList {
+            if (e.distanciaM > 0) add(km(e.distanciaM))
+            add("${e.calorias} calorías")
+            if (e.pulsoProm > 0) add("pulso promedio ${e.pulsoProm}")
+        }.joinToString(", ")
+        return anotar(Categoria.RELOJ, "Último ejercicio",
+            Resultado.ok("Tu último ejercicio fue ${e.nombre.lowercase()} el ${e.inicio.take(10)}: $min minutos, $extra."))
+    }
+
+    private suspend fun relojSincronizar(token: Int): Resultado {
+        permiso(Categoria.RELOJ, "¿Sincronizo el reloj?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Sincronizar", err!!)
+        if (!a.conectado) return anotar(Categoria.RELOJ, "Sincronizar", Resultado.falla("El reloj no está conectado."))
+        val antes = a.ultimaSync
+        if (!MiReloj.pedir(ctx, "sincronizar")) return anotar(Categoria.RELOJ, "Sincronizar", Resultado.falla("Mi Reloj no aceptó sincronizar."))
+        puente.avisar("Sincronizando el reloj…")
+        repeat(60) {
+            if (!Freno.vigente(token)) return Resultado.info("Frenado.")
+            delay(2000)
+            if ((MiReloj.ahora(ctx)?.ultimaSync ?: 0L) > antes)
+                return anotar(Categoria.RELOJ, "Sincronizar", Resultado.ok("Listo, sincronicé el reloj."))
+        }
+        return anotar(Categoria.RELOJ, "Sincronizar", Resultado.sinComprobar("Le pedí sincronizar, pero no vi que terminara. Revisa Mi Reloj."))
+    }
+
+    private suspend fun relojAvisar(texto: String): Resultado {
+        permiso(Categoria.RELOJ, "¿Mando \"$texto\" al reloj?")?.let { return it }
+        val (a, err) = relojAhora()
+        if (a == null) return anotar(Categoria.RELOJ, "Aviso al reloj", err!!)
+        if (!a.conectado) return anotar(Categoria.RELOJ, "Aviso al reloj", Resultado.falla("El reloj no está conectado, no pude mandarlo."))
+        val ok = MiReloj.pedir(ctx, "notificar", "Lumi", texto)
+        val r = if (ok) Resultado.sinComprobar("Lo mandé al reloj. No puedo ver su pantalla, así que confírmame si te llegó.")
+        else Resultado.falla("Mi Reloj no aceptó el aviso.")
+        return anotar(Categoria.RELOJ, "Aviso al reloj: $texto", r)
     }
 
     private suspend fun clima(ciudad: String?): Resultado {
